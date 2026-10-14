@@ -143,6 +143,25 @@ int main (int argc, char** argv)
         check (finiteAndBounded (z, 4.0f), "ping-pong with high feedback is stable");
     }
 
+    // ---- stereo delay: independent left / right ---------------------------
+    {
+        VocalStripProcessor p; p.prepareToPlay (fs, 512); allOff (p);
+        setP (p, "dly_on", 1); setP (p, "dly_sync", 0); setP (p, "dly_mode", 1); setP (p, "dly_mix", 100); setP (p, "dly_duck", 0);
+        setP (p, "dly_lowcut", 20); setP (p, "dly_highcut", 20000); setP (p, "dly_width", 100);
+        setP (p, "dly_time", 250); setP (p, "dly_fb", 0); setP (p, "dly_time_r", 400); setP (p, "dly_fb_r", 0);
+        AudioBuffer<float> b (2, 24000); b.clear(); b.setSample (0, 100, 1.0f); b.setSample (1, 100, 1.0f);
+        MidiBuffer m;
+        for (int pos = 0; pos < 24000; pos += 512)
+        {
+            AudioBuffer<float> sub (b.getArrayOfWritePointers(), 2, pos, jmin (512, 24000 - pos));
+            p.processBlock (sub, m);
+        }
+        auto peakAt = [&] (int ch) { int idx = 0; float best = 0; for (int i = 1000; i < 24000; ++i) if (std::abs (b.getSample (ch, i)) > best) { best = std::abs (b.getSample (ch, i)); idx = i; } return idx; };
+        const int l = peakAt (0), r = peakAt (1);
+        std::printf ("  stereo delay: left echo at %d (expect %d), right echo at %d (expect %d)\n", l, 12100, r, 19300);
+        check (std::abs (l - 12100) <= 2 && std::abs (r - 19300) <= 2, "stereo delay has separate left / right times");
+    }
+
     // ---- reverb + glue ---------------------------------------------------
     {
         VocalStripProcessor p; p.prepareToPlay (fs, 512); allOff (p);
@@ -187,6 +206,7 @@ int main (int argc, char** argv)
     {
         VocalStripProcessor p; p.prepareToPlay (fs, 512);
         p.setCurrentProgram (2);
+        setP (p, "dly_mode", 1); setP (p, "dly_div", 5); setP (p, "dly_div_r", 6); setP (p, "dly_fb_r", 45);
         auto voice = [&] (int i) { return 0.35f * (float) (std::sin (i * 0.02) * std::sin (i * 0.0007) + 0.3 * std::sin (i * 0.21)) + (rnd.nextFloat() - 0.5f) * 0.05f; };
         run (p, voice, 48000);
         std::unique_ptr<AudioProcessorEditor> ed (p.createEditor());

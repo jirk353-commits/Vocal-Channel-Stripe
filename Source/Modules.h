@@ -345,14 +345,15 @@ class Delay
 {
 public:
     enum Mode { Mono = 0, Stereo, PingPong };
-    struct Params { int mode = PingPong; float timeMs = 375, feedback = 35, lowCut = 200, highCut = 6000, width = 100, duck = 0; };
+    struct Params { int mode = PingPong; float timeMs = 375, feedback = 35, lowCut = 200, highCut = 6000, width = 100, duck = 0,
+                     timeMsR = 375, feedbackR = 35; };
 
     void prepare (double sampleRate)
     {
         fs = sampleRate;
         for (auto& b : buf) b.prepare ((int) (2.6 * fs));
         for (auto& b : buf) b.clear();
-        hp.reset(); lp.reset(); curT = -1; duckEnv = 0; lastLc = lastHc = -1;
+        hp.reset(); lp.reset(); curT = curTR = -1; duckEnv = 0; lastLc = lastHc = -1;
     }
     void setParams (const Params& np)
     {
@@ -360,17 +361,20 @@ public:
         if (p.lowCut != lastLc)  { lastLc = p.lowCut;  hp.set (AC::makeHighPass (fs, p.lowCut, 0.7071f)); }
         if (p.highCut != lastHc) { lastHc = p.highCut; lp.set (AC::makeLowPass (fs, juce::jmin (p.highCut, (float) fs * 0.45f), 0.7071f)); }
         targetT = juce::jlimit (1.0f, 2.5f * (float) fs, p.timeMs * 0.001f * (float) fs);
+        targetTR = p.mode == Stereo ? juce::jlimit (1.0f, 2.5f * (float) fs, p.timeMsR * 0.001f * (float) fs) : targetT;
         if (curT < 0) curT = targetT;
+        if (curTR < 0) curTR = targetTR;
         fb = juce::jlimit (0.0f, 0.95f, p.feedback * 0.01f);
+        fbR = p.mode == Stereo ? juce::jlimit (0.0f, 0.95f, p.feedbackR * 0.01f) : fb;
         aDuckRel = timeCoef (250.0f, fs);
     }
     /** returns the wet signal only */
     void process (float inL, float inR, float& outL, float& outR) noexcept
     {
-        curT += 0.0005f * (targetT - curT);
+        curT  += 0.0005f * (targetT - curT);
+        curTR += 0.0005f * (targetTR - curTR);
         const float dL = buf[0].read (curT);
-        const float tR = p.mode == Stereo ? curT * 1.0f : curT;
-        const float dR = buf[1].read (tR);
+        const float dR = buf[1].read (p.mode == Stereo ? curTR : curT);
 
         float fL = lp.process (0, hp.process (0, dL));
         float fR = lp.process (1, hp.process (1, dR));
@@ -385,7 +389,7 @@ public:
                 break;
             }
             case Stereo:
-                buf[0].push (inL + fL * fb); buf[1].push (inR + fR * fb);
+                buf[0].push (inL + fL * fb); buf[1].push (inR + fR * fbR);
                 outL = dL; outR = dR;
                 break;
             default: // ping-pong: mono input enters the left line, the lines feed each other
@@ -415,7 +419,7 @@ private:
     Params p;
     std::array<gv::Delay, 2> buf;
     Biquad2 hp, lp;
-    float curT = -1, targetT = 1000, fb = 0.3f, duckEnv = 0, aDuckRel = 0, lastLc = -1, lastHc = -1;
+    float curT = -1, targetT = 1000, curTR = -1, targetTR = 1000, fb = 0.3f, fbR = 0.3f, duckEnv = 0, aDuckRel = 0, lastLc = -1, lastHc = -1;
 };
 
 //==============================================================================

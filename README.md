@@ -11,7 +11,7 @@ A complete vocal chain in one VST3 plugin for Windows. Every module has its own 
 | **De-Esser** | Controls harsh S / SH / CH. Split or wide mode, Listen to hear the S band. |
 | **Saturation** | 3-band (Low / Mid / High) drive with adjustable crossovers, Tube / Tape / Warm, plus **Air** and **Mid Tone** exciters. |
 | **Glue** | Bus-style compressor with 2:1 / 4:1 / 10:1, stepped attack/release and Auto release. |
-| **Delay** | Mono, Stereo or Ping-Pong. Tempo sync (1/32 to 1/1, dotted, triplet), filtered feedback, width, ducking. |
+| **Delay** | Mono, Stereo or Ping-Pong. In Stereo mode the LEFT and RIGHT echoes have their own time and feedback. Tempo sync (1/32 to 1/1, dotted, triplet), filtered feedback, width, ducking. |
 | **Reverb** | 9 spaces (Ambience, Room, Studio, Chamber, Plate, Hall, Cathedral, Arena, Vintage) with low/high cut. |
 
 10 presets: Pop Vocal, Bhojpuri Lead, Devotional Warm, Rap Vocal, Airy Female, Deep Male, Podcast Voice, Backing Vocals, Lo-Fi Vocal.

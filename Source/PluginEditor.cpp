@@ -876,64 +876,134 @@ namespace
             : Page (p, 5, "DELAY", "Mono, Stereo or Ping-Pong echoes, synced to your song", "dly_on"),
               mode (*p.apvts.getParameter ("dly_mode"), { "MONO", "STEREO", "PING-PONG" }, accent),
               sync (p.apvts, "dly_sync", "SYNC TO TEMPO", accent),
-              div (*p.apvts.getParameter ("dly_div"), VocalStripProcessor::delayDivisions(), accent, 6),
-              time (p.apvts, "dly_time", "TIME", accent, true), fb (p.apvts, "dly_fb", "FEEDBACK", accent, true),
+              divL (*p.apvts.getParameter ("dly_div"), VocalStripProcessor::delayDivisions(), accent, 6),
+              divR (*p.apvts.getParameter ("dly_div_r"), VocalStripProcessor::delayDivisions(), rightColour(), 6),
+              timeL (p.apvts, "dly_time", "TIME", accent), fbL (p.apvts, "dly_fb", "FEEDBACK", accent),
+              timeR (p.apvts, "dly_time_r", "TIME", rightColour()), fbR (p.apvts, "dly_fb_r", "FEEDBACK", rightColour()),
               lc (p.apvts, "dly_lowcut", "LOW CUT", accent), hc (p.apvts, "dly_highcut", "HIGH CUT", accent),
               width (p.apvts, "dly_width", "WIDTH", accent), duck (p.apvts, "dly_duck", "DUCK", accent),
               mix (p.apvts, "dly_mix", "LEVEL", accent, true)
         {
-            for (Component* c : std::initializer_list<Component*> { &mode, &sync, &div, &time, &fb, &lc, &hc, &width, &duck, &mix }) addAndMakeVisible (c);
+            for (Component* c : std::initializer_list<Component*> { &mode, &sync, &divL, &divR, &timeL, &fbL, &timeR, &fbR,
+                                                                    &lc, &hc, &width, &duck, &mix })
+                addAndMakeVisible (c);
+            mode.onChange = [this] (int) { updateVisibility(); };
         }
+        static Colour rightColour() { return Colour (0xffffd166); }
+
         void layout (Rectangle<int> a) override
         {
             auto top = a.removeFromTop (44);
             mode.setBounds (top.removeFromLeft (420));
             top.removeFromLeft (16);
             sync.setBounds (top.removeFromLeft (200));
-            a.removeFromTop (12);
-            display = a.removeFromTop (110);
-            a.removeFromTop (12);
-            auto left = a.removeFromLeft (380);
-            div.setBounds (left.removeFromTop (80));
-            left.removeFromTop (8);
-            time.setBounds (left.withSizeKeepingCentre (160, left.getHeight()));
+            a.removeFromTop (10);
+            display = a.removeFromTop (96);
+            a.removeFromTop (10);
+
+            const int colW = 300;
+            leftCol = a.removeFromLeft (colW);
+            a.removeFromLeft (12);
+            rightCol = a.removeFromLeft (colW);
             a.removeFromLeft (16);
+
+            auto place = [] (Rectangle<int> col, ChoiceButtons& div, Knob& time, Knob& fb)
+            {
+                col.removeFromTop (22);                     // column title
+                div.setBounds (col.removeFromTop (64));
+                col.removeFromTop (6);
+                placeRow ({ &time, &fb }, col);
+            };
+            place (leftCol, divL, timeL, fbL);
+            place (rightCol, divR, timeR, fbR);
+
             auto r1 = a.removeFromTop (a.getHeight() / 2);
-            placeRow ({ &fb, &mix, &width }, r1);
-            placeRow ({ &lc, &hc, &duck }, a);
+            placeRow ({ &mix, &width, &duck }, r1);
+            placeRow ({ &lc, &hc }, a.withSizeKeepingCentre (a.getWidth() * 2 / 3, a.getHeight()));
+            updateVisibility();
         }
+
+        void updateVisibility()
+        {
+            const bool stereo = mode.getSelected() == 1;
+            for (Component* c : std::initializer_list<Component*> { &divR, &timeR, &fbR }) c->setVisible (stereo);
+            repaint();
+        }
+
         void paintContent (Graphics& g) override
         {
             const bool synced = proc.value ("dly_sync") > 0.5f;
-            time.setAlpha (synced ? 0.35f : 1.0f);
-            div.setAlpha (synced ? 1.0f : 0.35f);
+            const bool stereo = mode.getSelected() == 1;
+            for (Knob* k : { &timeL, &timeR }) k->setAlpha (synced ? 0.35f : 1.0f);
+            for (ChoiceButtons* d : { &divL, &divR }) d->setAlpha (synced ? 1.0f : 0.35f);
+
+            // column titles
+            auto title = [&] (Rectangle<int> col, const String& t, Colour c)
+            {
+                auto r = col.removeFromTop (20).toFloat();
+                g.setColour (c);
+                g.fillRoundedRectangle (r.removeFromLeft (4), 2.0f);
+                g.setFont (uiFont (13.5f, true, 0.12f));
+                g.drawText (t, r.withTrimmedLeft (8), Justification::centredLeft, false);
+            };
+            title (leftCol, stereo ? "LEFT" : "TIME  (both sides)", accent);
+            if (stereo)
+                title (rightCol, "RIGHT", rightColour());
+            else
+            {
+                g.setColour (col::textDim.withAlpha (0.8f));
+                g.setFont (uiFont (13.0f));
+                g.drawFittedText ("Choose STEREO to set the left and right echoes separately "
+                                  "(for example LEFT 1/8 and RIGHT 1/8 dotted for a wide stereo echo).",
+                                  rightCol.reduced (12, 30), Justification::centred, 4);
+            }
+
+            // echo picture: real echo times for each side
             auto r = box (display, g, "ECHOES  (" + String (proc.hostBpm.load(), 0) + " BPM)").toFloat().withTrimmedTop (16);
             const int m = (int) proc.value ("dly_mode");
-            const float fbv = proc.value ("dly_fb") * 0.01f;
-            float amp = 1.0f;
-            for (int k = 0; k < 12; ++k)
+            auto msFor = [&] (const char* timeId, const char* divId)
             {
-                const float x = r.getX() + 10.0f + (float) k * (r.getWidth() - 20.0f) / 12.0f;
-                const float h = r.getHeight() * 0.46f * std::sqrt (amp);
-                const bool left = m != 2 || k % 2 == 0, right = m != 2 || k % 2 == 1;
-                g.setColour (accent.withAlpha (0.25f + 0.75f * amp));
-                if (left)  g.fillRoundedRectangle (x, r.getCentreY() - h, 10.0f, h, 3.0f);
-                if (right) g.fillRoundedRectangle (x, r.getCentreY() + 2, 10.0f, h, 3.0f);
-                amp *= fbv;
-                if (amp < 0.02f) break;
-            }
+                if (! synced) return proc.value (timeId);
+                static const float beats[] = { 0.125f, 1.0f / 6.0f, 0.25f, 0.375f, 1.0f / 3.0f, 0.5f, 0.75f, 2.0f / 3.0f, 1.0f, 1.5f, 2.0f, 4.0f };
+                return (float) (60000.0 / jlimit (30.0, 300.0, proc.hostBpm.load())) * beats[jlimit (0, 11, (int) proc.value (divId))];
+            };
+            const float tL = msFor ("dly_time", "dly_div");
+            const float tR = m == 1 ? msFor ("dly_time_r", "dly_div_r") : tL;
+            const float fL = proc.value ("dly_fb") * 0.01f, fR = m == 1 ? proc.value ("dly_fb_r") * 0.01f : fL;
+            const float spanMs = jmax (tL, tR) * 6.5f;
+            auto tx = [&] (float ms) { return r.getX() + 16.0f + ms / spanMs * (r.getWidth() - 26.0f); };
+
+            auto drawSide = [&] (bool top, float t, float fb, Colour c, int startIndex, int step)
+            {
+                float amp = 1.0f;
+                for (int k = 1; k < 14; ++k)
+                {
+                    const float ms = t * (float) (startIndex + (k - 1) * step);
+                    if (ms > spanMs || amp < 0.02f) break;
+                    const float h = r.getHeight() * 0.44f * std::sqrt (amp);
+                    g.setColour (c.withAlpha (0.25f + 0.75f * amp));
+                    const float x = tx (ms);
+                    if (top) g.fillRoundedRectangle (x, r.getCentreY() - h, 9.0f, h, 3.0f);
+                    else     g.fillRoundedRectangle (x, r.getCentreY() + 2, 9.0f, h, 3.0f);
+                    amp *= fb;
+                }
+            };
+            if (m == 2)      { drawSide (true, tL, fL * fL, accent, 1, 2); drawSide (false, tL, fL * fL, accent, 2, 2); }
+            else if (m == 1) { drawSide (true, tL, fL, accent, 1, 1); drawSide (false, tR, fR, rightColour(), 1, 1); }
+            else             { drawSide (true, tL, fL, accent, 1, 1); drawSide (false, tL, fL, accent, 1, 1); }
+
             g.setColour (col::textDim);
             g.setFont (uiFont (11.5f, true));
-            g.drawText ("L", r.withWidth (14), Justification::topLeft, false);
-            g.drawText ("R", r.withWidth (14), Justification::bottomLeft, false);
+            g.drawText ("L  " + String (roundToInt (tL)) + " ms", r.withHeight (14), Justification::topLeft, false);
+            g.drawText ("R  " + String (roundToInt (tR)) + " ms", r.withTop (r.getBottom() - 14), Justification::bottomLeft, false);
         }
         void tick() override { repaint (display); }
     private:
         ChoiceButtons mode;
         Toggle sync;
-        ChoiceButtons div;
-        Knob time, fb, lc, hc, width, duck, mix;
-        Rectangle<int> display;
+        ChoiceButtons divL, divR;
+        Knob timeL, fbL, timeR, fbR, lc, hc, width, duck, mix;
+        Rectangle<int> display, leftCol, rightCol;
     };
 
     // ------------------------------------------------------------ REVERB

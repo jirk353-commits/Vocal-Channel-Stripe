@@ -164,6 +164,9 @@ AudioProcessorValueTreeState::ParameterLayout VocalStripProcessor::createLayout(
     flt ("dly_time", "Delay Time", skewed (10, 2000, 300), 375, ms);
     choice ("dly_div", "Delay Division", delayDivisions(), 5);
     flt ("dly_fb", "Delay Feedback", NormalisableRange<float> (0, 95), 30, pct);
+    flt ("dly_time_r", "Delay Time Right", skewed (10, 2000, 300), 500, ms);
+    choice ("dly_div_r", "Delay Division Right", delayDivisions(), 6);
+    flt ("dly_fb_r", "Delay Feedback Right", NormalisableRange<float> (0, 95), 30, pct);
     flt ("dly_lowcut", "Delay Low Cut", skewed (20, 2000, 300), 250, hz);
     flt ("dly_highcut", "Delay High Cut", skewed (1000, 20000, 6000), 6000, hz);
     flt ("dly_width", "Delay Width", NormalisableRange<float> (0, 150), 100, pct);
@@ -276,14 +279,16 @@ void VocalStripProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&)
     sat.setParams ({ (int) p ("sat_type"), p ("sat_low"), p ("sat_mid"), p ("sat_high"), p ("sat_xlow"), p ("sat_xhigh"),
                      p ("sat_air"), p ("sat_tone"), p ("sat_out") });
 
-    float delayMs = p ("dly_time");
+    float delayMs = p ("dly_time"), delayMsR = p ("dly_time_r");
     if (p ("dly_sync") > 0.5f)
     {
         static const float beats[] = { 0.125f, 1.0f / 6.0f, 0.25f, 0.375f, 1.0f / 3.0f, 0.5f, 0.75f, 2.0f / 3.0f, 1.0f, 1.5f, 2.0f, 4.0f };
-        delayMs = (float) (60000.0 / jlimit (30.0, 300.0, hostBpm.load())) * beats[jlimit (0, 11, (int) p ("dly_div"))];
+        const float beatMs = (float) (60000.0 / jlimit (30.0, 300.0, hostBpm.load()));
+        delayMs  = beatMs * beats[jlimit (0, 11, (int) p ("dly_div"))];
+        delayMsR = beatMs * beats[jlimit (0, 11, (int) p ("dly_div_r"))];
     }
     delay.setParams ({ (int) p ("dly_mode"), jmin (delayMs, 2500.0f), p ("dly_fb"), p ("dly_lowcut"), p ("dly_highcut"),
-                       p ("dly_width"), p ("dly_duck") });
+                       p ("dly_width"), p ("dly_duck"), jmin (delayMsR, 2500.0f), p ("dly_fb_r") });
 
     gv::Reverb::Params rp;
     rp.type = (int) p ("rev_type"); rp.decay = p ("rev_decay"); rp.predelayMs = p ("rev_pre"); rp.size = p ("rev_size");
